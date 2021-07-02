@@ -1,5 +1,6 @@
 package raft
-
+// done
+// 2021/07/03
 import (
 	"fmt"
 	"io"
@@ -121,6 +122,7 @@ const (
 )
 
 // Config provides any necessary configuration for the Raft server.
+// Raft server所需要必须配置
 type Config struct {
 	// ProtocolVersion allows a Raft server to inter-operate with older
 	// Raft servers running an older version of the code. This is used to
@@ -130,25 +132,30 @@ type Config struct {
 	// configured with compatible versions. See ProtocolVersionMin and
 	// ProtocolVersionMax for the versions of the protocol that this server
 	// can _understand_.
+	// 协议版本，用于raft server兼容新版本和老版本的标识符
 	ProtocolVersion ProtocolVersion
 
 	// HeartbeatTimeout specifies the time in follower state without
 	// a leader before we attempt an election.
+	// follower心跳超时时间
 	HeartbeatTimeout time.Duration
 
 	// ElectionTimeout specifies the time in candidate state without
 	// a leader before we attempt an election.
+	// candidate选举超时时间
 	ElectionTimeout time.Duration
 
 	// CommitTimeout controls the time without an Apply() operation
 	// before we heartbeat to ensure a timely commit. Due to random
 	// staggering, may be delayed as much as 2x this value.
+	// 标准raft论文中没有的小优化点 还看不懂
 	CommitTimeout time.Duration
 
 	// MaxAppendEntries controls the maximum number of append entries
 	// to send at once. We want to strike a balance between efficiency
 	// and avoiding waste if the follower is going to reject because of
 	// an inconsistent log.
+	// 一次可以提交日志数量上限
 	MaxAppendEntries int
 
 	// BatchApplyCh indicates whether we should buffer applyCh
@@ -156,18 +163,22 @@ type Config struct {
 	// but breaks the timeout guarantee on Apply. Specifically,
 	// a log can be added to the applyCh buffer but not actually be
 	// processed until after the specified timeout.
+	// 表示是否打开缓存需要app日志的buffer，如果打开会开启批量日志处理，但是会一定程度上破坏apply超时的语义
 	BatchApplyCh bool
 
 	// If we are a member of a cluster, and RemovePeer is invoked for the
 	// local node, then we forget all peers and transition into the follower state.
 	// If ShutdownOnRemove is set, we additional shutdown Raft. Otherwise,
 	// we can become a leader of a cluster containing only this node.
+	// 如果ShutdownOnRemove为true，在RemovePeer被调用后除了遗忘所有的peers并转入follower之外，还会额外关闭Raft
+	// 并且成为仅包含此节点的集群的leader
 	ShutdownOnRemove bool
 
 	// TrailingLogs controls how many logs we leave after a snapshot. This is used
 	// so that we can quickly replay logs on a follower instead of being forced to
 	// send an entire snapshot. The value passed here is the initial setting used.
 	// This can be tuned during operation using ReloadConfig.
+	// 控制了在生成快照之后还会留下多少日志，被用来同步follower时重放日志来代替传递整个快照
 	TrailingLogs uint64
 
 	// SnapshotInterval controls how often we check if we should perform a
@@ -175,28 +186,33 @@ type Config struct {
 	// the entire cluster from performing a snapshot at once. The value passed
 	// here is the initial setting used. This can be tuned during operation using
 	// ReloadConfig.
+	// 控制了节点生成快照的间隔
 	SnapshotInterval time.Duration
 
 	// SnapshotThreshold controls how many outstanding logs there must be before
 	// we perform a snapshot. This is to prevent excessive snapshotting by
 	// replaying a small set of logs instead. The value passed here is the initial
 	// setting used. This can be tuned during operation using ReloadConfig.
+	// 控制了生成快照之前需要有多少未处理的日志的阈值，放置过度快照
 	SnapshotThreshold uint64
 
 	// LeaderLeaseTimeout is used to control how long the "lease" lasts
 	// for being the leader without being able to contact a quorum
 	// of nodes. If we reach this interval without contact, we will
 	// step down as leader.
+	// 被用来控制leader在没有办法联系到集群的法定人数的情况下辞去leader的时间间隔
 	LeaderLeaseTimeout time.Duration
 
 	// LocalID is a unique ID for this server across all time. When running with
 	// ProtocolVersion < 3, you must set this to be the same as the network
 	// address of your transport.
+	// server的唯一标识
 	LocalID ServerID
 
 	// NotifyCh is used to provide a channel that will be notified of leadership
 	// changes. Raft will block writing to this channel, so it should either be
 	// buffered or aggressively consumed.
+	// 用于通知leader变更的channel
 	NotifyCh chan<- bool
 
 	// LogOutput is used as a sink for logs, unless Logger is specified.
@@ -215,6 +231,7 @@ type Config struct {
 	// FSM on start. This is useful if your FSM recovers from other mechanisms
 	// than raft snapshotting. Snapshot metadata will still be used to initialize
 	// raft's configuration and index values.
+	// 控制raft是否在启动时将快照恢复到FSM中
 	NoSnapshotRestoreOnStart bool
 
 	// skipStartup allows NewRaft() to bypass all background work goroutines
@@ -226,6 +243,7 @@ type Config struct {
 // or accepting a Config but only using specific fields to keep the API clear.
 // Reconfiguring some fields is potentially dangerous so we should only
 // selectively enable it for fields where that is allowed.
+// 重载配置的入参
 type ReloadableConfig struct {
 	// TrailingLogs controls how many logs we leave after a snapshot. This is used
 	// so that we can quickly replay logs on a follower instead of being forced to
@@ -248,6 +266,7 @@ type ReloadableConfig struct {
 // apply sets the reloadable fields on the passed Config to the values in
 // `ReloadableConfig`. It returns a copy of Config with the fields from this
 // ReloadableConfig set.
+// 将ReloadableConfig中的字段应用至Config中
 func (rc *ReloadableConfig) apply(to Config) Config {
 	to.TrailingLogs = rc.TrailingLogs
 	to.SnapshotInterval = rc.SnapshotInterval
@@ -256,6 +275,7 @@ func (rc *ReloadableConfig) apply(to Config) Config {
 }
 
 // fromConfig copies the reloadable fields from the passed Config.
+// 将Config中的字段加载至ReloadableConfig中
 func (rc *ReloadableConfig) fromConfig(from Config) {
 	rc.TrailingLogs = from.TrailingLogs
 	rc.SnapshotInterval = from.SnapshotInterval
@@ -263,6 +283,7 @@ func (rc *ReloadableConfig) fromConfig(from Config) {
 }
 
 // DefaultConfig returns a Config with usable defaults.
+// 默认配置
 func DefaultConfig() *Config {
 	return &Config{
 		ProtocolVersion:    ProtocolVersionMax,
@@ -280,6 +301,7 @@ func DefaultConfig() *Config {
 }
 
 // ValidateConfig is used to validate a sane configuration
+// 用于验证配置的合理性
 func ValidateConfig(config *Config) error {
 	// We don't actually support running as 0 in the library any more, but
 	// we do understand it.
