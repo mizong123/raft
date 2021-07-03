@@ -8,6 +8,7 @@ import (
 )
 
 // LogType describes various types of log entries.
+// 表示log的类型
 type LogType uint8
 
 const (
@@ -32,11 +33,13 @@ const (
 	// once committed, it only returns once the FSM manager acks it. Otherwise
 	// it is possible there are operations committed but not yet applied to
 	// the FSM.
+	// 阻塞版本的no-op
 	LogBarrier
 
 	// LogConfiguration establishes a membership change configuration. It is
 	// created when a server is added, removed, promoted, etc. Only used
 	// when protocol version 1 or greater is in use.
+	// 集群配置变更的log
 	LogConfiguration
 )
 
@@ -64,15 +67,19 @@ func (lt LogType) String() string {
 // and form the heart of the replicated state machine.
 type Log struct {
 	// Index holds the index of the log entry.
+	// log日志的index
 	Index uint64
 
 	// Term holds the election term of the log entry.
+	// log日志的term
 	Term uint64
 
 	// Type holds the type of the log entry.
+	// log的type
 	Type LogType
 
 	// Data holds the log entry's type-specific data.
+	// log的真实数据
 	Data []byte
 
 	// Extensions holds an opaque byte slice of information for middleware. It
@@ -88,6 +95,7 @@ type Log struct {
 	// upgraded, but a leader changeover during this process could lead to
 	// trouble, so gating extension behavior via some flag in the client
 	// program is also a good idea.
+	// 由client来处理的Extensions 扩展使用
 	Extensions []byte
 
 	// AppendedAt stores the time the leader first appended this log to it's
@@ -101,11 +109,13 @@ type Log struct {
 	// In general too the leader is not required to persist the log before
 	// delivering to followers although the current implementation happens to do
 	// this.
+	// leader第一次追加这个日志的时间，由于时钟问题不可靠，只是用来追踪/监控的字段
 	AppendedAt time.Time
 }
 
 // LogStore is used to provide an interface for storing
 // and retrieving logs in a durable fashion.
+// 用于存储日志和检索日志的抽象
 type LogStore interface {
 	// FirstIndex returns the first index written. 0 for no entries.
 	FirstIndex() (uint64, error)
@@ -126,6 +136,7 @@ type LogStore interface {
 	DeleteRange(min, max uint64) error
 }
 
+// 获取最早的log
 func oldestLog(s LogStore) (Log, error) {
 	var l Log
 

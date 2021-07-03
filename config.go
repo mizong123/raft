@@ -112,6 +112,7 @@ const (
 //    Since the original Raft library didn't enforce any versioning, we must
 //    include the legacy peers structure for this version, but we can deprecate
 //    it in the next snapshot version.
+// 快照的版本
 type SnapshotVersion int
 
 const (

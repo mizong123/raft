@@ -9,6 +9,7 @@ import (
 )
 
 // SnapshotMeta is for metadata of a snapshot.
+// 快照的元信息
 type SnapshotMeta struct {
 	// Version is the version number of the snapshot metadata. This does not cover
 	// the application's data in the snapshot, that should be versioned
@@ -19,19 +20,23 @@ type SnapshotMeta struct {
 	ID string
 
 	// Index and Term store when the snapshot was taken.
+	// 生成快照时的index和term
 	Index uint64
 	Term  uint64
 
 	// Peers is deprecated and used to support version 0 snapshots, but will
 	// be populated in version 1 snapshots as well to help with upgrades.
+	// 版本0的元数据，但在后续版本中为了兼容也有会
 	Peers []byte
 
 	// Configuration and ConfigurationIndex are present in version 1
 	// snapshots and later.
+	// 版本 >= 1
 	Configuration      Configuration
 	ConfigurationIndex uint64
 
 	// Size is the size of the snapshot in bytes.
+	// 快照的大小
 	Size int64
 }
 
@@ -39,19 +44,23 @@ type SnapshotMeta struct {
 // of snapshot storage and retrieval. For example, a client could implement
 // a shared state store such as S3, allowing new nodes to restore snapshots
 // without streaming from the leader.
+// 快照存储的抽象 比如用于将快照存储至共享的文件存储而不是从leader流式获取
 type SnapshotStore interface {
 	// Create is used to begin a snapshot at a given index and term, and with
 	// the given committed configuration. The version parameter controls
 	// which snapshot version to create.
+	// 从指定版本，index，term创建快照
 	Create(version SnapshotVersion, index, term uint64, configuration Configuration,
 		configurationIndex uint64, trans Transport) (SnapshotSink, error)
 
 	// List is used to list the available snapshots in the store.
 	// It should return then in descending order, with the highest index first.
+	// 返回现在可用的所有快照，降序排序
 	List() ([]*SnapshotMeta, error)
 
 	// Open takes a snapshot ID and provides a ReadCloser. Once close is
 	// called it is assumed the snapshot is no longer needed.
+	// 打开一个指定的快照
 	Open(id string) (*SnapshotMeta, io.ReadCloser, error)
 }
 
@@ -66,6 +75,7 @@ type SnapshotSink interface {
 // runSnapshots is a long running goroutine used to manage taking
 // new snapshots of the FSM. It runs in parallel to the FSM and
 // main goroutines, so that snapshots do not block normal operation.
+// 在单独的协程中生成FSM的快照
 func (r *Raft) runSnapshots() {
 	for {
 		select {
@@ -100,6 +110,7 @@ func (r *Raft) runSnapshots() {
 
 // shouldSnapshot checks if we meet the conditions to take
 // a new snapshot.
+// 判断是否达到了生成快照的条件
 func (r *Raft) shouldSnapshot() bool {
 	// Check the last snapshot index
 	lastSnap, _ := r.getLastSnapshot()
@@ -119,6 +130,7 @@ func (r *Raft) shouldSnapshot() bool {
 // takeSnapshot is used to take a new snapshot. This must only be called from
 // the snapshot thread, never the main thread. This returns the ID of the new
 // snapshot, along with an error.
+// 生成快照并返回快照的id
 func (r *Raft) takeSnapshot() (string, error) {
 	defer metrics.MeasureSince([]string{"raft", "snapshot", "takeSnapshot"}, time.Now())
 
@@ -134,6 +146,7 @@ func (r *Raft) takeSnapshot() (string, error) {
 	}
 
 	// Wait until we get a response
+	// 等待响应
 	if err := snapReq.Error(); err != nil {
 		if err != ErrNothingNewToSnapshot {
 			err = fmt.Errorf("failed to start snapshot: %v", err)
@@ -145,6 +158,7 @@ func (r *Raft) takeSnapshot() (string, error) {
 	// Make a request for the configurations and extract the committed info.
 	// We have to use the future here to safely get this information since
 	// it is owned by the main thread.
+	// 获取当前集群的配置
 	configReq := &configurationsFuture{}
 	configReq.ShutdownCh = r.shutdownCh
 	configReq.init()
@@ -167,6 +181,7 @@ func (r *Raft) takeSnapshot() (string, error) {
 	// application traffic flowing through the FSM. If there's none of that
 	// then it's not crucial that we snapshot, since there's not much going
 	// on Raft-wise.
+	// 如果配置变更则不允许生成快照
 	if snapReq.index < committedIndex {
 		return "", fmt.Errorf("cannot take snapshot now, wait until the configuration entry at %v has been applied (have applied %v)",
 			committedIndex, snapReq.index)
@@ -184,6 +199,7 @@ func (r *Raft) takeSnapshot() (string, error) {
 
 	// Try to persist the snapshot.
 	start = time.Now()
+	// 将FsmSnapshot持久化
 	if err := snapReq.snapshot.Persist(sink); err != nil {
 		sink.Cancel()
 		return "", fmt.Errorf("failed to persist snapshot: %v", err)
@@ -209,6 +225,7 @@ func (r *Raft) takeSnapshot() (string, error) {
 
 // compactLogs takes the last inclusive index of a snapshot
 // and trims the logs that are no longer needed.
+// 压缩日志，生成快照之后将不需要的日志从存储中删除
 func (r *Raft) compactLogs(snapIdx uint64) error {
 	defer metrics.MeasureSince([]string{"raft", "compactLogs"}, time.Now())
 	// Determine log ranges to compact

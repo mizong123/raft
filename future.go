@@ -8,6 +8,7 @@ import (
 )
 
 // Future is used to represent an action that may occur in the future.
+// 异步抽象
 type Future interface {
 	// Error blocks until the future arrives and then returns the error status
 	// of the future. This may be called any number of times - all calls will
@@ -251,6 +252,7 @@ type leadershipTransferFuture struct {
 
 // configurationsFuture is used to retrieve the current configurations. This is
 // used to allow safe access to this information outside of the main thread.
+// 被用于获取当前的配置
 type configurationsFuture struct {
 	deferError
 	configurations configurations

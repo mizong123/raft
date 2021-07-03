@@ -79,6 +79,7 @@ type Raft struct {
 
 	// applyCh is used to async send logs to the main thread to
 	// be committed and applied to the FSM.
+	// 用于异步提交日志以应用至FSM
 	applyCh chan *logFuture
 
 	// conf stores the current configuration to use. This is the most recent one
@@ -116,6 +117,7 @@ type Raft struct {
 	leaderLock sync.RWMutex
 
 	// leaderCh is used to notify of leadership changes
+	// 被用于提示leader变更
 	leaderCh chan bool
 
 	// leaderState used only while state is leader
@@ -140,17 +142,21 @@ type Raft struct {
 	logs LogStore
 
 	// Used to request the leader to make configuration changes.
+	// 用于向leader请求发起配置变更的channel
 	configurationChangeCh chan *configurationChangeFuture
 
 	// Tracks the latest configuration and latest committed configuration from
 	// the log/snapshot.
+	// 保存最新的配置和最新commit的配置
 	configurations configurations
 
 	// Holds a copy of the latest configuration which can be read
 	// independently from main loop.
+	// 最新日志配置的备份
 	latestConfiguration atomic.Value
 
 	// RPC chan comes from the transport layer
+	// 来自transport的请求channel
 	rpcCh <-chan RPC
 
 	// Shutdown channel to exit, protected to prevent concurrent exits
@@ -159,13 +165,16 @@ type Raft struct {
 	shutdownLock sync.Mutex
 
 	// snapshots is used to store and retrieve snapshots
+	// 快照的存储抽象
 	snapshots SnapshotStore
 
 	// userSnapshotCh is used for user-triggered snapshots
+	// 用户自己触发的快照生成channel
 	userSnapshotCh chan *userSnapshotFuture
 
 	// userRestoreCh is used for user-triggered restores of external
 	// snapshots
+	// 用户触发的快照恢复channel
 	userRestoreCh chan *userRestoreFuture
 
 	// stable is a StableStore implementation for durable state
@@ -177,14 +186,17 @@ type Raft struct {
 
 	// verifyCh is used to async send verify futures to the main thread
 	// to verify we are still the leader
+	// 被用于异步确认leader是否还是leader的channel
 	verifyCh chan *verifyFuture
 
 	// configurationsCh is used to get the configuration data safely from
 	// outside of the main thread.
+	// 被用于在主线程之外安全获取配置数据
 	configurationsCh chan *configurationsFuture
 
 	// bootstrapCh is used to attempt an initial bootstrap from outside of
 	// the main thread.
+	// 被用于在主线程之外启动的channel
 	bootstrapCh chan *bootstrapFuture
 
 	// List of observers and the mutex that protects them. The observers list
@@ -194,6 +206,7 @@ type Raft struct {
 
 	// leadershipTransferCh is used to start a leadership transfer from outside of
 	// the main thread.
+	// 被用于在主线程之外启动领导权转换的channel
 	leadershipTransferCh chan *leadershipTransferFuture
 }
 
@@ -209,9 +222,11 @@ type Raft struct {
 // One approach is to bootstrap a single server with a configuration
 // listing just itself as a Voter, then invoke AddVoter() on it to add other
 // servers to the cluster.
+// 启动集群
 func BootstrapCluster(conf *Config, logs LogStore, stable StableStore,
 	snaps SnapshotStore, trans Transport, configuration Configuration) error {
 	// Validate the Raft server config.
+	// 检验配置
 	if err := ValidateConfig(conf); err != nil {
 		return err
 	}
@@ -222,6 +237,7 @@ func BootstrapCluster(conf *Config, logs LogStore, stable StableStore,
 	}
 
 	// Make sure the cluster is in a clean state.
+	// 确保集群是一个干净的状态
 	hasState, err := HasExistingState(logs, stable, snaps)
 	if err != nil {
 		return fmt.Errorf("failed to check for existing state: %v", err)
@@ -236,6 +252,7 @@ func BootstrapCluster(conf *Config, logs LogStore, stable StableStore,
 	}
 
 	// Append configuration entry to log.
+	// 提交第一个日志 集群配置日志
 	entry := &Log{
 		Index: 1,
 		Term:  1,
@@ -417,6 +434,7 @@ func GetConfiguration(conf *Config, fsm FSM, logs LogStore, stable StableStore,
 
 // HasExistingState returns true if the server has any existing state (logs,
 // knowledge of a current term, or any snapshots).
+// 判断当前是否已有状态
 func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (bool, error) {
 	// Make sure we don't have a current term.
 	currentTerm, err := stable.GetUint64(keyCurrentTerm)

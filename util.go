@@ -28,6 +28,7 @@ func newSeed() int64 {
 }
 
 // randomTimeout returns a value that is between the minVal and 2x minVal.
+// 返回一至两倍内的随机时间
 func randomTimeout(minVal time.Duration) <-chan time.Time {
 	if minVal == 0 {
 		return nil
@@ -53,6 +54,7 @@ func max(a, b uint64) uint64 {
 }
 
 // generateUUID is used to generate a random UUID.
+// 生成uuid
 func generateUUID() string {
 	buf := make([]byte, 16)
 	if _, err := crand.Read(buf); err != nil {
@@ -69,6 +71,7 @@ func generateUUID() string {
 
 // asyncNotifyCh is used to do an async channel send
 // to a single channel without blocking.
+// 在不阻塞的情况下向channel发送
 func asyncNotifyCh(ch chan struct{}) {
 	select {
 	case ch <- struct{}{}:
@@ -78,6 +81,7 @@ func asyncNotifyCh(ch chan struct{}) {
 
 // drainNotifyCh empties out a single-item notification channel without
 // blocking, and returns whether it received anything.
+// 在不阻塞的情况下榨干channel并返回channel中是否存在对象
 func drainNotifyCh(ch chan struct{}) bool {
 	select {
 	case <-ch:
@@ -101,6 +105,7 @@ func asyncNotifyBool(ch chan bool, v bool) {
 // ch must be 1-item buffered channel.
 //
 // This method does not support multiple concurrent calls.
+// 覆盖notify channel
 func overrideNotifyBool(ch chan bool, v bool) {
 	select {
 	case ch <- v:

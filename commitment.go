@@ -12,6 +12,7 @@ type commitment struct {
 	// protects matchIndexes and commitIndex
 	sync.Mutex
 	// notified when commitIndex increases
+	// 在commitIndex增长时通知
 	commitCh chan struct{}
 	// voter ID to log index: the server stores up through this log entry
 	matchIndexes map[ServerID]uint64
@@ -20,6 +21,7 @@ type commitment struct {
 	// the first index of this leader's term: this needs to be replicated to a
 	// majority of the cluster before this leader may mark anything committed
 	// (per Raft's commitment rule)
+	// 这个term的第一个index，在leader commit 任何东西之前需要被复制到集群的法定人数
 	startIndex uint64
 }
 
@@ -71,6 +73,7 @@ func (c *commitment) getCommitIndex() uint64 {
 // leader has written the new entry or a follower has replied to an
 // AppendEntries RPC. The given server's disk agrees with this server's log up
 // through the given index.
+// 当我leader写入新日志条目或者follower回应了AppendEntriesRpc调用
 func (c *commitment) match(server ServerID, matchIndex uint64) {
 	c.Lock()
 	defer c.Unlock()
@@ -82,6 +85,7 @@ func (c *commitment) match(server ServerID, matchIndex uint64) {
 
 // Internal helper to calculate new commitIndex from matchIndexes.
 // Must be called with lock held.
+// 重新计算commitIndex 用法定 matchIndex来替代commitIndex
 func (c *commitment) recalculate() {
 	if len(c.matchIndexes) == 0 {
 		return

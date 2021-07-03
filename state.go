@@ -7,6 +7,7 @@ import (
 
 // RaftState captures the state of a Raft node: Follower, Candidate, Leader,
 // or Shutdown.
+// raft节点的状态
 type RaftState uint32
 
 const (
@@ -47,22 +48,27 @@ type raftState struct {
 	// atomic ops on 32 bit platforms.
 
 	// The current term, cache of StableStore
+	// 当前Tern
 	currentTerm uint64
 
 	// Highest committed log entry
+	// 已经commited的最大的日志index
 	commitIndex uint64
 
 	// Last applied log to the FSM
+	// 上一个applied到FSM的日志index
 	lastApplied uint64
 
 	// protects 4 next fields
 	lastLock sync.Mutex
 
 	// Cache the latest snapshot index/term
+	// 最新的快照Index和Term
 	lastSnapshotIndex uint64
 	lastSnapshotTerm  uint64
 
 	// Cache the latest log from LogStore
+	// 日志存储中的最新Index和Term
 	lastLogIndex uint64
 	lastLogTerm  uint64
 

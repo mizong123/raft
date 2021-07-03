@@ -21,17 +21,21 @@ type AppendEntriesRequest struct {
 	RPCHeader
 
 	// Provide the current term and leader
+	// 当前的term和leader
 	Term   uint64
 	Leader []byte
 
 	// Provide the previous entries for integrity checking
+	// 提供之前的日志条目
 	PrevLogEntry uint64
 	PrevLogTerm  uint64
 
 	// New entries to commit
+	// 需要commit的日志
 	Entries []*Log
 
 	// Commit index on the leader
+	// leader 的commit index
 	LeaderCommitIndex uint64
 }
 

@@ -58,6 +58,7 @@ is not known if there is an error.
 
 */
 type NetworkTransport struct {
+	// 连接池
 	connPool     map[ServerAddress][]*netConn
 	connPoolLock sync.Mutex
 
@@ -119,6 +120,7 @@ type StreamLayer interface {
 	Dial(address ServerAddress, timeout time.Duration) (net.Conn, error)
 }
 
+// 连接池中的连接对象
 type netConn struct {
 	target ServerAddress
 	conn   net.Conn
@@ -472,12 +474,14 @@ func (n *NetworkTransport) TimeoutNow(id ServerID, target ServerAddress, args *T
 }
 
 // listen is used to handling incoming connections.
+// 用于处理传入的连接
 func (n *NetworkTransport) listen() {
 	const baseDelay = 5 * time.Millisecond
 	const maxDelay = 1 * time.Second
 
 	var loopDelay time.Duration
 	for {
+		// 获取连接并处理
 		// Accept incoming connections
 		conn, err := n.stream.Accept()
 		if err != nil {
@@ -529,7 +533,7 @@ func (n *NetworkTransport) handleConn(connCtx context.Context, conn net.Conn) {
 			return
 		default:
 		}
-
+		// 处理真正的消息
 		if err := n.handleCommand(r, dec, enc); err != nil {
 			if err != io.EOF {
 				n.logger.Error("failed to decode incoming command", "error", err)
@@ -612,6 +616,7 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 	}
 
 	// Dispatch the RPC
+	// 将rpc放入consume channel
 	select {
 	case n.consumeCh <- rpc:
 	case <-n.shutdownCh:
@@ -619,6 +624,7 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 	}
 
 	// Wait for response
+	// 等待响应
 RESP:
 	select {
 	case resp := <-respCh:
@@ -688,6 +694,7 @@ func sendRPC(conn *netConn, rpcType uint8, args interface{}) error {
 
 // newNetPipeline is used to construct a netPipeline from a given
 // transport and connection.
+// AppendPipeline 的net版本实现
 func newNetPipeline(trans *NetworkTransport, conn *netConn) *netPipeline {
 	n := &netPipeline{
 		conn:         conn,
@@ -702,6 +709,7 @@ func newNetPipeline(trans *NetworkTransport, conn *netConn) *netPipeline {
 
 // decodeResponses is a long running routine that decodes the responses
 // sent on the connection.
+// 是一个长期运行的协程用于解码响应 从inprogressCh读取future解码后放入doneCh后交给外部消费
 func (n *netPipeline) decodeResponses() {
 	timeout := n.trans.timeout
 	for {
@@ -725,6 +733,7 @@ func (n *netPipeline) decodeResponses() {
 }
 
 // AppendEntries is used to pipeline a new append entries request.
+// AppendPipeline 的实现
 func (n *netPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntriesResponse) (AppendFuture, error) {
 	// Create a new future
 	future := &appendFuture{

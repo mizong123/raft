@@ -27,6 +27,7 @@ var (
 
 // followerReplication is in charge of sending snapshots and log entries from
 // this leader during this particular term to a remote follower.
+// 负责leader向follower复制日志的工作
 type followerReplication struct {
 	// currentTerm and nextIndex must be kept at the top of the struct so
 	// they're 64 bit aligned which is a requirement for atomic ops on 32 bit
@@ -34,59 +35,72 @@ type followerReplication struct {
 
 	// currentTerm is the term of this leader, to be included in AppendEntries
 	// requests.
+	// 当前Term
 	currentTerm uint64
 
 	// nextIndex is the index of the next log entry to send to the follower,
 	// which may fall past the end of the log.
+	// 下一个要让follower发送日志的index
 	nextIndex uint64
 
 	// peer contains the network address and ID of the remote follower.
+	// follower的信息
 	peer Server
 
 	// commitment tracks the entries acknowledged by followers so that the
 	// leader's commit index can advance. It is updated on successful
 	// AppendEntries responses.
+	// 用于追踪entries被follower承认的进度
 	commitment *commitment
 
 	// stopCh is notified/closed when this leader steps down or the follower is
 	// removed from the cluster. In the follower removed case, it carries a log
 	// index; replication should be attempted with a best effort up through that
 	// index, before exiting.
+	// 在leader降级或follower退出集群时会被关闭/通知
 	stopCh chan uint64
 
 	// triggerCh is notified every time new entries are appended to the log.
+	// 每次有新的日志加入时会被通知
 	triggerCh chan struct{}
 
 	// triggerDeferErrorCh is used to provide a backchannel. By sending a
 	// deferErr, the sender can be notifed when the replication is done.
+	// 通过deferErr channel来构建一个反向通道
 	triggerDeferErrorCh chan *deferError
 
 	// lastContact is updated to the current time whenever any response is
 	// received from the follower (successful or not). This is used to check
 	// whether the leader should step down (Raft.checkLeaderLease()).
+	// 每当follower响应时候被更新
 	lastContact time.Time
 	// lastContactLock protects 'lastContact'.
 	lastContactLock sync.RWMutex
 
 	// failures counts the number of failed RPCs since the last success, which is
 	// used to apply backoff.
+	// 记录连续失败的rpc个数
 	failures uint64
 
 	// notifyCh is notified to send out a heartbeat, which is used to check that
 	// this server is still leader.
+	// 被通知进行心跳的channel
 	notifyCh chan struct{}
 	// notify is a map of futures to be resolved upon receipt of an
 	// acknowledgement, then cleared from this map.
+	// 记录核实自己是否仍然是leader请求future的map
 	notify map[*verifyFuture]struct{}
 	// notifyLock protects 'notify'.
 	notifyLock sync.Mutex
 
 	// stepDown is used to indicate to the leader that we
 	// should step down based on information from a follower.
+	// 从该follower的信息判断leader应该降级的channel
 	stepDown chan struct{}
 
-	// allowPipeline is used to determine when to pipeline the AppendEntries RPCs.
+	// allowPipeline is used to determine when to pipeline the ç RPCs.
 	// It is private to this replication goroutine.
+	// 决定什么时候pipeline化请求
 	allowPipeline bool
 }
 
@@ -129,6 +143,7 @@ func (s *followerReplication) setLastContact() {
 
 // replicate is a long running routine that replicates log entries to a single
 // follower.
+// 运行在独立协程中
 func (r *Raft) replicate(s *followerReplication) {
 	// Start an async heartbeating routing
 	stopHeartbeat := make(chan struct{})
@@ -137,10 +152,12 @@ func (r *Raft) replicate(s *followerReplication) {
 
 RPC:
 	shouldStop := false
+	// 多个同步时机
 	for !shouldStop {
 		select {
 		case maxIndex := <-s.stopCh:
 			// Make a best effort to replicate up to this index
+			// 代表follower退出，尽量让follower追上进度
 			if maxIndex > 0 {
 				r.replicateTo(s, maxIndex)
 			}
@@ -180,6 +197,7 @@ PIPELINE:
 	// Replicates using a pipeline for high performance. This method
 	// is not able to gracefully recover from errors, and so we fall back
 	// to standard mode on failure.
+	// 进入pipeline模式，当出错时回到single模式
 	if err := r.pipelineReplicate(s); err != nil {
 		if err != ErrPipelineReplicationNotSupported {
 			r.logger.Error("failed to start pipeline replication to", "peer", s.peer, "error", err)
@@ -191,6 +209,7 @@ PIPELINE:
 // replicateTo is a helper to replicate(), used to replicate the logs up to a
 // given last index.
 // If the follower log is behind, we take care to bring them up to date.
+// 将该follower的日志更新至指定index
 func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop bool) {
 	// Create the base request
 	var req AppendEntriesRequest
@@ -198,6 +217,7 @@ func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop
 	var start time.Time
 START:
 	// Prevent an excessive retry rate on errors
+	// 失败重试
 	if s.failures > 0 {
 		select {
 		case <-time.After(backoff(failureWait, s.failures, maxFailureScale)):
@@ -206,6 +226,7 @@ START:
 	}
 
 	// Setup the request
+	// 建立一个完整的AppendEntriesRequest
 	if err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex); err == ErrLogNotFound {
 		goto SEND_SNAP
 	} else if err != nil {
@@ -249,6 +270,8 @@ START:
 	}
 
 CHECK_MORE:
+	// 重试
+	// 在重试之前快速判断自己还是不是Leader
 	// Poll the stop channel here in case we are looping and have been asked
 	// to stop, or have stepped down as leader. Even for the best effort case
 	// where we are asked to replicate to a given index and then shutdown,
@@ -269,6 +292,7 @@ CHECK_MORE:
 	// SEND_SNAP is used when we fail to get a log, usually because the follower
 	// is too far behind, and we must ship a snapshot down instead
 SEND_SNAP:
+	// 如果获取日志失败，通常是因为follower落后过多，需要向follower发送日志
 	if stop, err := r.sendLatestSnapshot(s); stop {
 		return true
 	} else if err != nil {
@@ -282,6 +306,7 @@ SEND_SNAP:
 
 // sendLatestSnapshot is used to send the latest snapshot we have
 // down to our follower.
+// 发送最新的快照
 func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	// Get the snapshots
 	snapshots, err := r.snapshots.List()
@@ -332,6 +357,7 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	metrics.MeasureSince([]string{"raft", "replication", "installSnapshot", string(s.peer.ID)}, start)
 
 	// Check for a newer term, stop running
+	// 发现follower的term更高
 	if resp.Term > req.Term {
 		r.handleStaleTerm(s)
 		return true, nil
@@ -343,6 +369,7 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	// Check for success
 	if resp.Success {
 		// Update the indexes
+		// 更新所有相关Index
 		atomic.StoreUint64(&s.nextIndex, meta.Index+1)
 		s.commitment.match(s.peer.ID, meta.Index)
 
@@ -361,6 +388,7 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 // heartbeat is used to periodically invoke AppendEntries on a peer
 // to ensure they don't time out. This is done async of replicate(),
 // since that routine could potentially be blocked on disk IO.
+// 定期心跳
 func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 	var failures uint64
 	req := AppendEntriesRequest{
@@ -397,6 +425,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 			metrics.MeasureSinceWithLabels([]string{"raft", "replication", "heartbeat"}, start, labels)
 			// Duplicated information. Kept for backward compatibility.
 			metrics.MeasureSince([]string{"raft", "replication", "heartbeat", string(s.peer.ID)}, start)
+			// 得到单个节点的vote结果
 			s.notifyAll(resp.Success)
 		}
 	}
@@ -430,6 +459,7 @@ func (r *Raft) pipelineReplicate(s *followerReplication) error {
 
 	shouldStop := false
 SEND:
+	// 和单个请求的相同
 	for !shouldStop {
 		select {
 		case <-finishCh:
@@ -458,6 +488,7 @@ SEND:
 	}
 
 	// Stop our decoder, and wait for it to finish
+	// 和 	r.goFunc(func() { r.pipelineDecode(s, pipeline, stopCh, finishCh) }) 联动
 	close(stopCh)
 	select {
 	case <-finishCh:
@@ -468,6 +499,7 @@ SEND:
 
 // pipelineSend is used to send data over a pipeline. It is a helper to
 // pipelineReplicate.
+// 向pipeline中加入请求
 func (r *Raft) pipelineSend(s *followerReplication, p AppendPipeline, nextIdx *uint64, lastIndex uint64) (shouldStop bool) {
 	// Create a new append request
 	req := new(AppendEntriesRequest)
@@ -490,6 +522,7 @@ func (r *Raft) pipelineSend(s *followerReplication, p AppendPipeline, nextIdx *u
 }
 
 // pipelineDecode is used to decode the responses of pipelined requests.
+// 用于反序列化pipelined的请求
 func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, finishCh chan struct{}) {
 	defer close(finishCh)
 	respCh := p.Consumer()
@@ -522,6 +555,7 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 }
 
 // setupAppendEntries is used to setup an append entries request.
+// 用于构建追加日志条目req
 func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
 	req.RPCHeader = r.getRPCHeader()
 	req.Term = s.currentTerm
@@ -538,6 +572,7 @@ func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequ
 
 // setPreviousLog is used to setup the PrevLogEntry and PrevLogTerm for an
 // AppendEntriesRequest given the next index to replicate.
+// 获取上一个日志的数据并赋值至AppendEntriesRequest
 func (r *Raft) setPreviousLog(req *AppendEntriesRequest, nextIndex uint64) error {
 	// Guard for the first index, since there is no 0 log entry
 	// Guard against the previous index being a snapshot as well
@@ -565,6 +600,7 @@ func (r *Raft) setPreviousLog(req *AppendEntriesRequest, nextIndex uint64) error
 }
 
 // setNewLogs is used to setup the logs which should be appended for a request.
+// 为AppendEntriesRequest填充 nextIndex 至 lastIndex的日志
 func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
 	// Append up to MaxAppendEntries or up to the lastIndex. we need to use a
 	// consistent value for maxAppendEntries in the lines below in case it ever
@@ -594,8 +630,10 @@ func appendStats(peer string, start time.Time, logs float32) {
 }
 
 // handleStaleTerm is used when a follower indicates that we have a stale term.
+// 处理发现follower告诉leader是一个落后的term
 func (r *Raft) handleStaleTerm(s *followerReplication) {
 	r.logger.Error("peer has newer term, stopping replication", "peer", s.peer)
+	// 告知所有verify future自己已经不是leader 并通知step down channel
 	s.notifyAll(false) // No longer leader
 	asyncNotifyCh(s.stepDown)
 }
@@ -603,6 +641,7 @@ func (r *Raft) handleStaleTerm(s *followerReplication) {
 // updateLastAppended is used to update follower replication state after a
 // successful AppendEntries RPC.
 // TODO: This isn't used during InstallSnapshot, but the code there is similar.
+// 在follower成功同步日志之后调用
 func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
 	// Mark any inflight logs as committed
 	if logs := req.Entries; len(logs) > 0 {

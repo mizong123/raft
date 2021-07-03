@@ -148,6 +148,7 @@ type configurations struct {
 	committedIndex uint64
 	// latest is the latest configuration in the log/snapshot (may be committed
 	// or uncommitted)
+	// 日志/快照中的最新配置
 	latest Configuration
 	// latestIndex is the log index where 'latest' was written.
 	latestIndex uint64
@@ -164,6 +165,7 @@ func (c *configurations) Clone() (copy configurations) {
 
 // hasVote returns true if the server identified by 'id' is a Voter in the
 // provided Configuration.
+// 返回是否是配置中的选民
 func hasVote(configuration Configuration, id ServerID) bool {
 	for _, server := range configuration.Servers {
 		if server.ID == id {
